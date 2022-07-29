@@ -1,0 +1,339 @@
+<html>
+<script src='https://d3js.org/d3.v5.min.js'></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+
+<script src="https://rawgit.com/susielu/d3-annotation/master/d3-annotation.min.js"></script>
+
+<style>
+    circle {
+        fill: lightblue;
+        stroke: black;
+    }
+
+    .title {
+        margin-left: 30%;
+    }
+
+    .years {
+        margin-left: 20%;
+    }
+    
+    select {
+        width: 100px;
+    }
+</style>
+
+<body onload='init()'>
+    <div id="tooltip"></div>
+    <h2 id="title" class="title">Death rates from alcohol use disorders, 2019</h2>
+    <label class='years' for='years'>Choose year:</label>
+    <select name='years' id='years' onchange="onYearSelected()"></select>
+    <svg id="map">
+    </svg>
+    <script>
+        var selectedYear = 2019;
+        class Country {
+            constructor(code, value, year) {
+                this.code = code;
+                this.value = value;
+                this.year = year;
+            }
+        }
+
+        var margin = { top: 20, right: 10, bottom: 0, left: 10 },
+            width = 1000 - margin.left - margin.right,
+            height = 400 - margin.top - margin.bottom;
+
+        var svg = d3.select("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        var tooltip = d3.select("#tooltip")
+            .style("opacity", 0)
+            .attr("class", "tooltip")
+            .style("background-color", "white")
+            .style("border", "solid")
+            .style("border-width", "1px")
+            .style("border-radius", "5px")
+            .style("padding", "5px")
+            .style("position", "absolute")
+            .html("<p id='details'></p><div id='line_data'</div>")
+
+        var projection = d3.geoMercator()
+            .scale(70)
+            .center([0, 20])
+            .translate([width / 2 - margin.left, height / 2]);
+
+        var domain = [0, 1, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 15]
+        var range = ["#fee1d4", "#fae1d4", "#f3bea5", "#ee9679", "#e97254", "#dd4b39", "#af2d26", "#a92b24", "#98231f", "#6b1615", "#5f0e12"]
+        var colorScale = d3.scaleThreshold()
+            .domain(domain)
+            .range(range)
+
+        var countries = [];
+        var data = d3.map();
+
+        var shouldUpdateCountries = true;
+
+
+        async function loadData() {
+            var promises = []
+            promises.push(d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"))
+            promises.push(d3.csv("death-rates-from-alcohol-use-disorders.csv", function (d) {
+                if (shouldUpdateCountries) {
+                    countries.push(new Country(d.Code, parseFloat(d.Deaths), parseInt(d.Year)));
+                }
+                if (selectedYear == -1 || parseInt(d.Year) == selectedYear) {
+                    data.set(d.Code, +d.alcohol_consumption_per_capita);
+                }
+            }))
+            myDataPromises = Promise.all(promises).then(function (topo) {
+                shouldUpdateCountries = false;
+                createDropDown();
+
+
+                var topo = topo[0];
+
+                createMap(topo)
+
+                // legend
+                var legend_x = width - 200;
+                var legend_y = height - 300;
+                svg.append("g")
+                    .attr("class", "legendQuant")
+                    .attr("transform", "translate(" + legend_x + "," + legend_y + ")");
+
+                var legend = d3.legendColor()
+                    .labels(domain.map(d => d))
+                    .title("Deaths per 100,000")
+                    .scale(colorScale)
+
+
+                svg.select(".legendQuant")
+                    .call(legend);
+
+                const annotations2 = [
+                    {
+                        note: {
+                            label: "USA had a total of 84.16 deaths per 100,000 from 2008 - 2018",
+                            title: "USA",
+                            wrap: 150,  // try something smaller to see text split in several lines
+                            padding: 10   // More = text lower
+
+                        },
+                        color: ["#000000"],
+                        x: projection([-95.7129, 37.0902])[0],
+                        y: projection([-95.7129, 37.0902])[1],
+                        dy: -40,
+                        dx: -70
+                    }
+                ];
+
+                const makeAnnotations2 = d3.annotation()
+                    .annotations(annotations2);
+
+                svg.append("g")
+                    .style("opacity", 1)
+                    .attr("id", "annotation2")
+                    .call(makeAnnotations2);
+
+            });
+        }
+
+        async function init() {
+            loadData();
+        }
+
+
+        function deleteMap() {
+            svg.selectAll(".topo").remove();
+        }
+
+        function createMap(topo) {
+            // Draw the map
+            svg.append("g")
+                .selectAll("path")
+                .style("opacity", .7)
+                .data(topo.features)
+                .enter()
+                .append("path")
+                .attr("class", "topo")
+                // draw each country
+                .attr("d", d3.geoPath()
+                    .projection(projection)
+                )
+                // set the color of each country
+                .attr("fill", function (d) {
+                    var total = 0;
+
+                    if (selectedYear == -1) {
+                        total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                    } else {
+                        total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                    }
+
+                    d.total = total;
+
+                    if (d.total <= 0) {
+                        return "#F0F0F0";
+                    } else {
+                        return colorScale(d.total);
+                    }
+                })
+                .on("mouseover", mouseOver)
+                .on("mouseleave", mouseLeave)
+        }
+
+        let mouseOver = function (d) {
+            d3.selectAll(".topo")
+                .style("opacity", .5)
+                .transition()
+                .duration(200)
+
+            d3.select(this)
+                //.filter(function(d){d.total = data.get(d.id) || 0; return d.total <= max_pop && d.total >= min_pop})
+
+                .style("opacity", 1)
+                .style("stroke", "black")
+                .transition()
+                .duration(200)
+
+            var total = 0;
+
+            if (selectedYear == -1) {
+                total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+            } else {
+                total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+            }
+            d.total = total;
+
+            d3.select("#details")
+                .text(d.properties.name + ": " + d3.format(",.2f")(d.total) + " deaths per 100,000")
+
+            addLineGraph(countries, d.id);
+
+            tooltip
+                .style("opacity", 0.8)
+                .style("left", (d3.event.pageX + 30) + "px")
+                .style("top", (d3.event.pageY - 28) + "px");
+
+            d3.select("#annotation2")
+                .style("opacity", 0)
+        }
+
+        let mouseLeave = function (d) {
+            d3.selectAll(".topo")
+
+                .style("opacity", 1)
+                .transition()
+                .duration(200)
+
+            d3.selectAll(".topo")
+                .style("stroke", "transparent")
+                .transition()
+                .duration(200)
+
+            d3.select("#annotation2")
+                .style("opacity", 1)
+
+            d3.select("#tooltip")
+                .style("opacity", 0)
+
+            d3.select("#line_data").select("svg")
+                .remove()
+        }
+
+        function createDropDown() {
+            var years = [-1]
+            years.push.apply(years, d3.range(1990, 2020))
+            // years.append(d3.range(2000, 2019))
+            var options = d3.select("#years")
+                .selectAll('option')
+                .data(years)
+                .enter()
+                .append('option')
+                .text(function (d) {
+                    if (d == -1) {
+                        return "Total";
+                    } else {
+                        return d;
+                    }
+                });
+        }
+
+        function addLineGraph(countries, country) {
+
+            var lineGraphMargin = { top: 10, right: 30, bottom: 30, left: 60 },
+                width = 250 - margin.left - margin.right,
+                height = 200 - margin.top - margin.bottom;
+
+            //     var margin = { top: 60, right: 230, bottom: 50, left: 50 },
+            // width = 660 - margin.left - margin.right,
+            // height = 400 - margin.top - margin.bottom;
+
+
+            var canvas = d3.select("#line_data")
+                .append("svg")
+                .attr("width", 300)
+                .attr("height", 200)
+                .append("g")
+                .attr("transform",
+                    "translate(" + 30 + "," + 0 + ")");
+
+
+            var filtered = countries.filter(c => c.code == country);
+            var max = Math.max(...filtered.map(f => f.value));
+            var x = d3.scaleLinear()
+                .domain([1990, 2019])
+                .range([0, width]);
+            canvas.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).tickFormat(function (d) { return d == 2000 || d == 2018 ? d : null; }));
+
+            // Add Y axis
+            var y = d3.scaleLinear()
+                .domain([0, max])
+                .range([height, 0]);
+            canvas.append("g")
+                .call(d3.axisLeft(y).ticks(1));
+
+            // Add the line
+            canvas.append("path")
+                .datum(filtered)
+                .attr("fill", "none")
+                .attr("stroke", "black")
+                .attr("stroke-width", 1.5)
+                .attr("d", d3.line()
+                    .x(function (d) { return x(d.year) })
+                    .y(function (d) { return y(d.value) })
+                )
+        }
+
+        function updateTitle() {
+            var yearText = selectedYear;
+
+            if (yearText == -1) {
+                yearText = "2000 - 2019";
+            }
+
+            d3.select("#title")
+                .text("Death rates from alcohol use disorders, " + yearText)
+        }
+
+        function onYearSelected() {
+            selectedYear = d3.select('select').property('value');
+
+            if (selectedYear == "Total") {
+                selectedYear = -1;
+            }
+            updateTitle();
+            loadData();
+        }
+    </script>
+</body>
+
+</html>

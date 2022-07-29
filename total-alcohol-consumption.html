@@ -1,0 +1,335 @@
+<html>
+<script src='https://d3js.org/d3.v5.min.js'></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+
+<script src="https://rawgit.com/susielu/d3-annotation/master/d3-annotation.min.js"></script>
+
+<style>
+    circle {
+        fill: lightblue;
+        stroke: black;
+    }
+
+    .title {
+        margin-left: 30%;
+    }
+
+    .years {
+        margin-left: 20%;
+    }
+    
+    select {
+        width: 100px;
+    }
+</style>
+
+<body onload='init()'>
+    <div id="tooltip"></div>
+    <h2 id="title" class="title">World average alcohol consumption per person by litres, 2008 - 2018</h2>
+    <label class="years" for='years'>Choose year:</label>
+    <select name='years' id='years' onchange="onYearSelected()"></select>
+    <svg id="map">
+    </svg>
+    <script>
+        var selectedYear = -1;
+        class Country {
+            constructor(code, value, year) {
+                this.code = code;
+                this.value = value;
+                this.year = year;
+            }
+        }
+
+        var margin = { top: 20, right: 10, bottom: 0, left: 10 },
+            width = 1000 - margin.left - margin.right,
+            height = 400 - margin.top - margin.bottom;
+
+        var svg = d3.select("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        var tooltip = d3.select("#tooltip")
+            .style("opacity", 0)
+            .attr("class", "tooltip")
+            .style("background-color", "white")
+            .style("border", "solid")
+            .style("border-width", "1px")
+            .style("border-radius", "5px")
+            .style("padding", "5px")
+            .style("position", "absolute")
+            .html("<p id='details'></p><div id='line_data'</div>")
+
+        var projection = d3.geoMercator()
+            .scale(70)
+            .center([0, 20])
+            .translate([width / 2 - margin.left, height / 2]);
+
+        var domain = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+        var range = ["#FFFFDD", "#EFF8B9", "#CEE8B9", "#92CBBC", "#64B4C2", "#458FBC", "#335CA2", "#2E4898", "#28348D", "#1C2970", "#0E1D54"]
+        var colorScale = d3.scaleThreshold()
+            .domain(domain)
+            .range(range)
+
+        var countries = [];
+        var data = d3.map();
+
+        var shouldUpdateCountries = true;
+
+
+        async function loadData() {
+            var promises = []
+            promises.push(d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"))
+            promises.push(d3.csv("total-alcohol-consumption-per-capita-litres-of-pure-alcohol.csv", function (d) {
+                if (shouldUpdateCountries) {
+                    countries.push(new Country(d.Code, parseFloat(d.alcohol_consumption_per_capita), parseInt(d.Year)));
+                }
+                if (selectedYear == -1 || parseInt(d.Year) == selectedYear) {
+                    data.set(d.Code, +d.alcohol_consumption_per_capita);
+                }
+            }))
+            myDataPromises = Promise.all(promises).then(function (topo) {
+                shouldUpdateCountries = false;
+                createDropDown();
+
+
+                var topo = topo[0];
+
+                createMap(topo)
+
+                // legend
+                var legend_x = width - 200;
+                var legend_y = height - 300;
+                svg.append("g")
+                    .attr("class", "legendQuant")
+                    .attr("transform", "translate(" + legend_x + "," + legend_y + ")");
+
+                var legend = d3.legendColor()
+                    .labels(domain.map(d => d + " litres"))
+                    .title("Alcohol consumption")
+                    .scale(colorScale)
+
+
+                svg.select(".legendQuant")
+                    .call(legend);
+
+                // Features of the annotation
+                const annotations = [
+                    {
+                        note: {
+                            label: "USA consumed an average of 47.73 litres of alcohol per person from 2008 - 2018",
+                            title: "USA",
+                            wrap: 150,  // try something smaller to see text split in several lines
+                            padding: 10   // More = text lower
+
+                        },
+                        color: ["#000000"],
+                        x: projection([-95.7129, 37.0902])[0],
+                        y: projection([-95.7129, 37.0902])[1],
+                        dy: -40,
+                        dx: -70
+                    }
+                ];
+
+                const makeAnnotations = d3.annotation()
+                    .annotations(annotations);
+
+                svg.append("g")
+                    .style("opacity", 1)
+                    .attr("id", "annotation")
+                    .call(makeAnnotations);
+
+            });
+        }
+
+        async function init() {
+            loadData();
+        }
+
+
+        function deleteMap() {
+            svg.selectAll(".topo").remove();
+        }
+
+        function createMap(topo) {
+            // Draw the map
+            svg.append("g")
+                .selectAll("path")
+                .style("opacity", .7)
+                .data(topo.features)
+                .enter()
+                .append("path")
+                .attr("class", "topo")
+                // draw each country
+                .attr("d", d3.geoPath()
+                    .projection(projection)
+                )
+                // set the color of each country
+                .attr("fill", function (d) {
+                    var total = 0;
+
+                    if (selectedYear == -1) {
+                        total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                    } else {
+                        total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                    }
+
+                    d.total = total;
+
+                    if (d.total <= 0) {
+                        return "#F0F0F0";
+                    } else {
+                        return colorScale(d.total);
+                    }
+                })
+                .on("mouseover", mouseOver)
+                .on("mouseleave", mouseLeave)
+        }
+
+        let mouseOver = function (d) {
+            d3.selectAll(".topo")
+                .style("opacity", .5)
+                .transition()
+                .duration(200)
+
+            d3.select(this)
+                //.filter(function(d){d.total = data.get(d.id) || 0; return d.total <= max_pop && d.total >= min_pop})
+
+                .style("opacity", 1)
+                .style("stroke", "black")
+                .transition()
+                .duration(200)
+
+            var total = 0;
+
+            if (selectedYear == -1) {
+                total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+            } else {
+                total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+            }
+            d.total = total;
+
+            d3.select("#details")
+                .text(d.properties.name + ": " + d3.format(",.2f")(d.total) + " litres")
+
+            addLineGraph(countries, d.id);
+
+            tooltip
+                .style("opacity", 0.8)
+                .style("left", (d3.event.pageX + 30) + "px")
+                .style("top", (d3.event.pageY - 28) + "px");
+
+            d3.select("#annotation")
+                .style("opacity", 0)
+        }
+
+        let mouseLeave = function (d) {
+            d3.selectAll(".topo")
+
+                .style("opacity", 1)
+                .transition()
+                .duration(200)
+
+            d3.selectAll(".topo")
+                .style("stroke", "transparent")
+                .transition()
+                .duration(200)
+
+            d3.select("#annotation")
+                .style("opacity", 1)
+
+            d3.select("#tooltip")
+                .style("opacity", 0)
+
+            d3.select("#line_data").select("svg")
+                .remove()
+        }
+
+        function createDropDown() {
+            var years = [-1]
+            years.push.apply(years, [2000, 2005, 2010, 2015, 2018])
+            // years.append(d3.range(2000, 2019))
+            var options = d3.select("#years")
+                .selectAll('option')
+                .data(years)
+                .enter()
+                .append('option')
+                .text(function (d) {
+                    if (d == -1) {
+                        return "Total";
+                    } else {
+                        return d;
+                    }
+                });
+        }
+
+        function addLineGraph(countries, country) {
+
+            var lineGraphMargin = { top: 10, right: 30, bottom: 30, left: 60 },
+                width = 460 - margin.left - margin.right,
+                height = 400 - margin.top - margin.bottom;
+
+            var canvas = d3.select("#line_data")
+                .append("svg")
+                .attr("width", 200)
+                .attr("height", 150)
+                .append("g")
+                .attr("transform",
+                    "translate(" + 30 + "," + 10 + ")");
+
+
+            var filtered = countries.filter(c => c.code == country);
+
+            var x = d3.scaleLinear()
+                .domain([2000, 2018])
+                .range([0, 100]);
+            canvas.append("g")
+                .attr("transform", "translate(0," + 100 + ")")
+                .call(d3.axisBottom(x).tickFormat(function (d) { return d == 2000 || d == 2018 ? d : null; }));
+
+            // Add Y axis
+            var y = d3.scaleLinear()
+                .domain([0, 22])
+                .range([100, 0]);
+            canvas.append("g")
+                .call(d3.axisLeft(y));
+
+            // Add the line
+            canvas.append("path")
+                .datum(filtered)
+                .attr("fill", "none")
+                .attr("stroke", "black")
+                .attr("stroke-width", 1.5)
+                .attr("d", d3.line()
+                    .x(function (d) { return x(d.year) })
+                    .y(function (d) { return y(d.value) })
+                )
+        }
+
+        function updateTitle() {
+            var yearText = selectedYear;
+
+            if (yearText == -1) {
+                yearText = "2000 - 2018";
+            }
+
+            d3.select("#title")
+                .text("World average alcohol consumption per person by litres, " + yearText)
+        }
+
+        function onYearSelected() {
+            selectedYear = d3.select('select').property('value');
+
+            if (selectedYear == "Total") {
+                selectedYear = -1;
+            }
+            updateTitle();
+            loadData();
+        }
+    </script>
+</body>
+
+</html>

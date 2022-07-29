@@ -1,0 +1,396 @@
+<html>
+<script src='https://d3js.org/d3.v5.min.js'></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"></script>
+
+<script src="https://rawgit.com/susielu/d3-annotation/master/d3-annotation.min.js"></script>
+
+<style>
+    circle {
+        fill: lightblue;
+        stroke: black;
+    }
+
+    .title {
+        margin-left: 30%;
+    }
+
+    .graph {
+        margin-left: 25%;
+    }
+
+    .dotted {
+        stroke: #5c5c5c;
+        stroke-dasharray: 1 1;
+        fill: none;
+    }
+
+    .tooltip {
+        opacity: 0;
+        position: absolute;
+        top: -14px;
+        left: 0;
+        padding: 0.6em 1em;
+        background: #fff;
+        text-align: center;
+        line-height: 1.4em;
+        font-size: 0.9em;
+        border: 1px solid #ddd;
+        z-index: 10;
+        transition: all 0.1s ease-out;
+        pointer-events: none;
+    }
+
+    .modal {
+        display: none;
+        /* Hidden by default */
+        position: fixed;
+        /* Stay in place */
+        z-index: 1;
+        /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%;
+        /* Full width */
+        height: 100%;
+        /* Full height */
+        overflow: auto;
+        /* Enable scroll if needed */
+        background-color: rgb(0, 0, 0);
+        /* Fallback color */
+        background-color: rgba(0, 0, 0, 0.4);
+        /* Black w/ opacity */
+    }
+
+    .modal-content {
+        background-color: #fefefe;
+        margin: 15% auto;
+        /* 15% from the top and centered */
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%;
+        /* Could be more or less, depending on screen size */
+    }
+
+    .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+    }
+
+    .close:hover,
+    .close:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    label {
+        color: black;
+    }
+
+    .column {
+        float: left;
+        width: 50%;
+    }
+
+    .row:after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+
+    button {
+        margin-left: 30%;
+        font-size: small;
+        width: 150px;
+        background-color: lightseagreen;
+        color: white;
+    }
+
+    .myLabel {
+        font-size: medium;
+        color: black;
+    }
+</style>
+
+<body onload="init()">
+    <h2 class="title">Rate of premature deaths due to alcohol, 1990 to 2019</h2>
+    <button type="button" onclick="showCountrySelection()">Add Country</button>
+    <div id="tooltip" class="tooltip">
+        <div class="tooltip-date">
+            <span id="date"></span>
+        </div>
+        <div class="tooltip-country">
+            <div id="country">
+            </div>
+        </div>
+    </div>
+
+    <div id="line_data"></div>
+    <div id="myModal" class="modal">
+
+        <!-- Modal content -->
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <p>Choose countries</p>
+            <div class="row">
+                <div class="column" id="column1"></div>
+                <div class="column" id="column2"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+
+        function splitToChunks(array, parts) {
+            let result = [];
+            for (let i = parts; i > 0; i--) {
+                result.push(array.splice(0, Math.ceil(array.length / i)));
+            }
+            return result;
+        }
+
+        function showCountrySelection() {
+            tooltip.style("opacity", 0);
+            d3.select("#myModal").style("display", "block");
+
+            modalContent = d3.select(".modal-content");
+
+
+            var counter = 0;
+            for (const [key, value] of Object.entries(uniqueCountryNames)) {
+
+                var column;
+                if (counter <= Object.keys(uniqueCountryNames).length / 2) {
+                    column = modalContent.select("#column1")
+                } else {
+                    column = modalContent.select("#column2")
+                }
+                column.append("input")
+                    .attr("type", "checkbox")
+                    .attr("id", key)
+                    .attr("name", value)
+                    .attr("checked", () => { if (selectedCountries.includes(key)) return true })
+                    .on("change", checkListener);
+
+                column.append("label")
+                    .text(value)
+                    .attr("for", value)
+                    .append("br");
+
+
+                counter++;
+
+            }
+        }
+
+        function checkListener() {
+            if (this.checked) {
+                selectedCountries.push(this.id)
+                addPath(countries, this.id)
+            } else {
+                removePath(this.id)
+            }
+        }
+
+        function closeModal() {
+            d3.select("#myModal").style("display", "none");
+        }
+
+        class Country {
+            constructor(code, name, value, year) {
+                this.code = code;
+                this.name = name;
+                this.value = value;
+                this.year = year;
+            }
+        }
+
+        var margin = { top: 60, right: 230, bottom: 50, left: 50 },
+            width = 800 - margin.left - margin.right,
+            height = 400 - margin.top - margin.bottom;
+
+        var svg = d3.select("#line_data")
+            .append("svg")
+            .attr("class", "graph")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform",
+                "translate(" + margin.left + "," + margin.top + ")")
+            .on("mouseover", onMouseOver);
+        var x = d3.scaleLinear()
+            .domain([1990, 2019])
+            .range([0, width]);
+        svg.append("g")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(x).ticks(5).tickFormat(function (d) { return d }));
+
+        // Add Y axis
+        var y = d3.scaleLinear()
+            .domain([0, 50])
+            .range([height, 0]);
+        svg.append("g")
+            .call(d3.axisLeft(y));
+
+        const xAxisLine = svg
+            .append("g")
+            .append("rect")
+            .attr("class", "dotted")
+            .attr("stroke-width", "1px")
+            .attr("width", ".5px")
+            .attr("stroke", "#000")
+            .attr("top", margin.top)
+            .attr("bottom", margin.bottom)
+            .attr("height", height);
+
+        const yAccessor = (d) => d.value;
+        const xAccessor = (d) => {
+            return d.year;
+        };
+
+        const tooltip = d3.select("#tooltip");
+
+        function onMouseOver() {
+            const mousePosn = d3.mouse(this);
+            const hoveredYear = x.invert(mousePosn[0]);
+
+            const getDistanceFromHoveredYear = (d) => Math.abs(xAccessor(d) - hoveredYear);
+            const closestIndex = d3.scan(filteredCountries, (a, b) => getDistanceFromHoveredYear(a) - getDistanceFromHoveredYear(b));
+            const closestDataPoint = filteredCountries[closestIndex];
+
+            // console.log(closestDataPoint);
+
+            const closestXValue = xAccessor(closestDataPoint);
+
+            const currValues = filteredCountries.filter(fc => fc.year == closestXValue);
+
+            const closestYValue = yAccessor(closestDataPoint);
+
+            tooltip.select("#date").text(closestXValue);
+
+            const formatValue = (d) => `${d3.format(".2f")(d)}`;
+
+            tooltip.select("#country").selectAll("span").remove();
+
+            tooltip
+                .select("#country")
+                .selectAll(".values")
+                .data(currValues)
+                .enter()
+                .append("span")
+                .style("color", function (d, i) { return colorScale(d.code) })
+                .html(function (d) { return `${d.name} ` + formatValue(d.value) + "<br>" });
+
+            const xPx = x(closestXValue) + margin.left;
+            const yPx = y(closestYValue) + margin.top;
+
+            tooltip.style("transform",
+                "translate(" + `calc(-50% + ${xPx}px),` + `calc(-100% + ${yPx}px)` + `)`);
+
+            tooltip.style("opacity", 1);
+            // tooltipCircle
+            // .attr("cx", x(closestXValue))
+            // .attr("cy", y(closestYValue))
+            // .style("opacity", 1);
+
+            xAxisLine.attr("x", x(closestXValue));
+
+            d3.select("#annotation3")
+                .style("opacity", 0)
+
+
+        }
+
+        var colorScale = []
+        var countries = []
+        var promises = []
+        var uniqueCountryNames = {}
+        var selectedCountries = ['USA','TUR', "LKA"]
+        var filteredCountries = []
+
+        async function init() {
+
+            promises.push(d3.csv("rate-of-premature-deaths-due-to-alcohol.csv", function (data) {
+                if (data.Code != "") {
+                    if (data.Code in uniqueCountryNames == false) {
+                        uniqueCountryNames[data.Code] = data.Entity;
+                    }
+                    countries.push(new Country(data.Code, data.Entity, data.Deaths, parseInt(data.Year)));
+                }
+            }));
+
+            result = Promise.all(promises).then(function (topo) {
+                colorScale = d3.scaleOrdinal().domain(selectedCountries).range(d3.schemeCategory10);
+
+                for (i = 0; i < selectedCountries.length; i++) {
+                    addPath(countries, selectedCountries[i]);
+                }
+
+                const annotations3 = [
+                    {
+                        note: {
+                            label: "Sri Lanka had a total of 50.01 deaths per 100,000 on the year 2004",
+                            title: "Sri Lanka",
+                            wrap: 180,  // try something smaller to see text split in several lines
+                            padding: 10   // More = text lower
+
+                        },
+                        color: ["#000000"],
+                        x: x(2004),
+                        y: y(50.01),
+                        dy: 10,
+                        dx: 100
+                    }
+                ];
+
+                const makeAnnotations3 = d3.annotation()
+                    .annotations(annotations3);
+
+                svg.append("g")
+                    .style("opacity", 1)
+                    .attr("id", "annotation3")
+                    .call(makeAnnotations3);
+            });
+        }
+
+        function removePath(country) {
+            svg.selectAll(`.${country}`).remove();
+        }
+
+
+        function addPath(countries, country) {
+            var filtered = countries.filter(c => c.code == country);
+            filteredCountries.push(...filtered);
+
+            svg.selectAll(".circle")
+                .data(filtered)
+                .enter()
+                .append("circle")
+                .attr("class", country)
+                .attr("cx", function (d) { return x(d.year) })
+                .attr("cy", function (d) { return y(d.value) })
+                .attr("r", 2);
+
+            var last = filtered[filtered.length -1];
+
+            svg.append("path")
+                .datum(filtered)
+                .attr("class", country)
+                .attr("fill", "none")
+                .attr("stroke", function (d, i) { return colorScale(d[i].code); })
+                .attr("stroke-width", 1.5)
+                .attr("d", d3.line()
+                    .x(function (d) { return x(d.year) })
+                    .y(function (d) { return y(d.value) })
+                );
+            
+        }
+    </script>
+</body>
+
+</html>
