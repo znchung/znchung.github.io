@@ -117,7 +117,7 @@
 </style>
 
 <body onload="init()">
-    <h2 class="title">Rate of premature deaths due to alcohol, 1990 to 2019</h2>
+    <h2 class="title">Rate of premature deaths due to alcohol, 1990 - 2019</h2>
     <button type="button" onclick="showCountrySelection()">Add Country</button>
     <div id="tooltip" class="tooltip">
         <div class="tooltip-date">
@@ -286,13 +286,17 @@
                 .style("color", function (d, i) { return colorScale(d.code) })
                 .html(function (d) { return `${d.name} ` + formatValue(d.value) + "<br>" });
 
-            const xPx = x(closestXValue) + margin.left;
-            const yPx = y(closestYValue) + margin.top;
+            const xPx = x(closestXValue);
+            const yPx = y(closestYValue);
 
-            tooltip.style("transform",
-                "translate(" + `calc(-50% + ${xPx}px),` + `calc(-100% + ${yPx}px)` + `)`);
+            tooltip.style("opacity", 1)
+            .style("left", (d3.event.pageX + 30) + "px")
+            .style("top", (d3.event.pageY - 28) + "px");
 
-            tooltip.style("opacity", 1);
+
+            // tooltip.style("transform",
+            //     "translate(" + `calc(-50% + ${xPx}px),` + `calc(-100% + ${yPx}px)` + `)`);
+
             // tooltipCircle
             // .attr("cx", x(closestXValue))
             // .attr("cy", y(closestYValue))
@@ -334,17 +338,17 @@
                 const annotations3 = [
                     {
                         note: {
-                            label: "Sri Lanka had a total of 50.01 deaths per 100,000 on the year 2004",
-                            title: "Sri Lanka",
+                            label: "USA has around 26 deaths per 100,000 on the year 1990",
+                            title: "USA",
                             wrap: 180,  // try something smaller to see text split in several lines
                             padding: 10   // More = text lower
 
                         },
                         color: ["#000000"],
-                        x: x(2004),
-                        y: y(50.01),
-                        dy: 10,
-                        dx: 100
+                        x: x(1990),
+                        y: y(26.32),
+                        dy: 25,
+                        dx: 30
                     }
                 ];
 

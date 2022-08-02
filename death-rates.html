@@ -27,13 +27,14 @@
 
 <body onload='init()'>
     <div id="tooltip"></div>
-    <h2 id="title" class="title">Death rates from alcohol use disorders, 2019</h2>
+    <h2 id="title" class="title">Death rates from alcohol use disorders, 1990</h2>
     <label class='years' for='years'>Choose year:</label>
     <select name='years' id='years' onchange="onYearSelected()"></select>
     <svg id="map">
     </svg>
+    <button onclick="play()">Play</button>
     <script>
-        var selectedYear = 2019;
+        var selectedYear = -1;
         class Country {
             constructor(code, value, year) {
                 this.code = code;
@@ -79,7 +80,6 @@
 
         var shouldUpdateCountries = true;
 
-
         async function loadData() {
             var promises = []
             promises.push(d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"))
@@ -119,7 +119,7 @@
                 const annotations2 = [
                     {
                         note: {
-                            label: "USA had a total of 84.16 deaths per 100,000 from 2008 - 2018",
+                            label: "USA average 2 deaths every 100,000 from 1990 - 2019",
                             title: "USA",
                             wrap: 150,  // try something smaller to see text split in several lines
                             padding: 10   // More = text lower
@@ -171,7 +171,7 @@
                     var total = 0;
 
                     if (selectedYear == -1) {
-                        total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                        total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0) / 30;
                     } else {
                         total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
                     }
@@ -205,7 +205,7 @@
             var total = 0;
 
             if (selectedYear == -1) {
-                total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
+                total = countries.filter(c => c.code == d.id).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0) / 30;
             } else {
                 total = countries.filter(c => c.code == d.id && c.year == selectedYear).map(c => c.value).reduce((partialSum, a) => partialSum + a, 0);
             }
@@ -262,7 +262,9 @@
                     } else {
                         return d;
                     }
-                });
+                })
+                .attr("selected", function(d) {if (selectedYear == d) { return "selected"}});
+
         }
 
         function addLineGraph(countries, country) {

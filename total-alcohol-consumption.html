@@ -123,21 +123,55 @@
         var currIndex = 0;
         var years = [2000, 2005, 2010, 2015, 2018];
 
+        // Features of the annotation
+                var annotations = [
+                    {
+                        note: {
+                            label: "USA consumed an average of almost 10 litres of alcohol per person from 2008 - 2018",
+                            title: "USA",
+                            wrap: 150,  // try something smaller to see text split in several lines
+                            padding: 10   // More = text lower
+
+                        },
+                        color: ["#000000"],
+                        x: projection([-95.7129, 37.0902])[0],
+                        y: projection([-95.7129, 37.0902])[1],
+                        dy: -40,
+                        dx: -70
+                    }
+                ];
+
         function play() {
-            d3.select("#annotation")
-                .style("opacity", 0)
+            console.log("asda");
+            // d3.select("#annotation")
+            //     .style("opacity", 0)
 
             setTimeout(function () {
+                selectedYear = years[currIndex];
                 refresh();
 
-                if (currIndex == 5) {
+                if (currIndex == 4) {
+                    currIndex = 0;
                     return;
                 }
-                selectedYear = years[currIndex];
                 currIndex++;
                 play();
 
             }, 1500);
+        }
+
+        function updateAnnotation(amount) {
+            annotations[0].note.label = "USA consumed about " + d3.format(",.2f")(amount) + " litres of alcohol per person on " + selectedYear;
+
+            const makeAnnotations = d3.annotation()
+                    .annotations(annotations);
+
+            svg.select("#annotation").remove();
+
+            svg.append("g")
+                .style("opacity", 1)
+                .attr("id", "annotation")
+                .call(makeAnnotations);
         }
 
         function refresh() {
@@ -161,8 +195,8 @@
                     }
                 })
 
-            d3.select('#years').text('' + selectedYear);
             updateTitle();
+            updateAnnotation( data.get("USA"));
         }
 
         async function loadData() {
@@ -201,23 +235,7 @@
                 svg.select(".legendQuant")
                     .call(legend);
 
-                // Features of the annotation
-                const annotations = [
-                    {
-                        note: {
-                            label: "USA consumed an average of almost 10 litres of alcohol per person from 2008 - 2018",
-                            title: "USA",
-                            wrap: 150,  // try something smaller to see text split in several lines
-                            padding: 10   // More = text lower
-
-                        },
-                        color: ["#000000"],
-                        x: projection([-95.7129, 37.0902])[0],
-                        y: projection([-95.7129, 37.0902])[1],
-                        dy: -40,
-                        dx: -70
-                    }
-                ];
+                
 
                 const makeAnnotations = d3.annotation()
                     .annotations(annotations);
@@ -226,6 +244,7 @@
                     .style("opacity", 1)
                     .attr("id", "annotation")
                     .call(makeAnnotations);
+                play();
 
             });
         }
